@@ -92,6 +92,8 @@ def receive_messages_handler(sock):
             break
 
 def main():
+    HOST = input("HOST=")
+    PORT = int(input("PORT="))
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.connect((HOST, PORT))
