@@ -5,9 +5,13 @@ import json
 HOST = "localhost"
 PORT = 9999
 
+lock = threading.Lock()
+
 is_logged_in = False
 is_connected = True
 login_response_event = threading.Event()
+
+retriveFileQueue = {}
 
 def getAddressAndPort(addr):
     return f"{addr[0]}:{addr[1]}"
@@ -22,6 +26,16 @@ def send_request(conn, action, data):
         conn.sendall(raw_data)
     except Exception:
         pass
+
+def openFileToString(path):
+    output = ""
+    with open(path, "rb") as file:
+        output += file.read().hex()
+    return output
+
+def stringToFile(data, path):
+    with open(path, "wb") as file:
+        file.write(bytes.fromhex(data))
 
 def receive_messages_handler(sock):
     global is_logged_in, is_connected
@@ -62,6 +76,14 @@ def receive_messages_handler(sock):
                     case "111":
                         raw_list = res.get("data", [])
                         print(f"\n[Server]: {', '.join(raw_list)}\n> ", end="", flush=True)
+                    case "121":
+                        raw_list = res.get("data", [])
+                        print(f"\n[Server]: {', '.join(raw_list)}\n> ", end="", flush=True)
+                    # case "130":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    case "131":
+                        raw_list = res.get("data", [])
+                        print(f"\n[Server]: {', '.join(raw_list)}\n> ", end="", flush=True)
                     # case "200":
                     #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
                     case "201":
@@ -81,9 +103,53 @@ def receive_messages_handler(sock):
                     #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
                     # case "330":
                     #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    # case "340":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    # case "341":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    # case "341r":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
                     case "331":
                         data = res.get('data', {})
                         print(f"\n[(Group: {data.get("group")}): {data.get("from")}@{getAddressAndPort(data.get("addr"))}]: {data.get("msg")}\n> ", end="", flush=True)
+                    # case "400":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    case "401":
+                        data = res.get('data', {})
+                        print(f"\n[{data.get("from")}@{getAddressAndPort(data.get("addr"))}]: Sent file: {data.get("file_name")}\n> ", end="", flush=True)
+                    # case "401r":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    case "410":
+                        data = res.get('data', {})
+                        with lock:
+                            if(data.get("file_name") in retriveFileQueue.keys()):
+                                retriveFileQueue.pop(data.get("file_name"))
+                        print(f"\n[Server]: {data.get("msg")}\n> ", end="", flush=True)   
+                    case "411":
+                        data = res.get('data', {})
+                        stringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))             
+                    # case "420":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    # case "421":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)  
+                    case "431":
+                        data = res.get('data', {})
+                        print(f"\n[(Group: {data.get("group")}): {data.get("from")}@{getAddressAndPort(data.get("addr"))}]: Sent file: {data.get("file_name")}\n> ", end="", flush=True)
+                    # case "431r":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    case "440":
+                        data = res.get('data', {})
+                        with lock:
+                            if(data.get("file_name") in retriveFileQueue.keys()):
+                                retriveFileQueue.pop(data.get("file_name"))
+                        print(f"\n[Server]: {data.get("msg")}\n> ", end="", flush=True)   
+                    case "441":
+                        data = res.get('data', {})
+                        stringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))             
+                    # case "450":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+                    # case "451":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)  
                     case _:
                         print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
         except Exception:
@@ -125,31 +191,58 @@ def main():
             parts = cmd_input.split(" ")
             command = parts[0]
 
-            match command:
-                case "/list_users":
-                    send_request(sock, "list_users", None)
-                case "/list_groups":
-                    send_request(sock, "list_groups", None)
-                case "/direct_message":
-                    send_request(sock, "direct_message", {"target_name": parts[1], "msg": parts[2]})
-                case "/dm":
-                    send_request(sock, "direct_message", {"target_name": parts[1], "msg": parts[2]})
-                case "/create_group":
-                    send_request(sock, "create_group", {"group": parts[1]})
-                case "/join_group":
-                    send_request(sock, "join_group", {"group": parts[1]})
-                case "/join":
-                    send_request(sock, "join_group", {"group": parts[1]})
-                case "/leave_group":
-                    send_request(sock, "leave_group", {"group": parts[1]})
-                case "/leave":
-                    send_request(sock, "leave_group", {"group": parts[1]})
-                case "/group_message":
-                    send_request(sock, "group_message", {"group": parts[1], "msg": parts[2]})
-                case "/gm":
-                    send_request(sock, "group_message", {"group": parts[1], "msg": parts[2]})
-                case _:
-                    print(f"Unknown command: {command}")
+            try:
+                match command:
+                    case "/list_users":
+                        send_request(sock, "list_users", None)
+                    case "/list_groups":
+                        send_request(sock, "list_groups", None)
+                    case "/list_files":
+                        send_request(sock, "list_direct_files", None)
+                    case "/list_group_files":
+                        send_request(sock, "list_group_files", {"group": parts[1]})
+                    case "/direct_message":
+                        send_request(sock, "direct_message", {"target_name": parts[1], "msg": parts[2]})
+                    case "/dm":
+                        send_request(sock, "direct_message", {"target_name": parts[1], "msg": parts[2]})
+                    case "/create_group":
+                        send_request(sock, "create_group", {"group": parts[1]})
+                    case "/join_group":
+                        send_request(sock, "join_group", {"group": parts[1]})
+                    case "/join":
+                        send_request(sock, "join_group", {"group": parts[1]})
+                    case "/leave_group":
+                        send_request(sock, "leave_group", {"group": parts[1]})
+                    case "/leave":
+                        send_request(sock, "leave_group", {"group": parts[1]})
+                    case "/group_message":
+                        send_request(sock, "group_message", {"group": parts[1], "msg": parts[2]})
+                    case "/gm":
+                        send_request(sock, "group_message", {"group": parts[1], "msg": parts[2]})
+                    case "/remove_group":
+                        send_request(sock, "remove_group", {"group": parts[1]})
+                    case "/send_file":
+                        file_data = openFileToString(parts[3])
+                        send_request(sock, "direct_send_file", {"target_name": parts[1], "file_name": parts[2], "data": file_data})
+                    case "/retrieve_file":
+                        with lock:
+                            retriveFileQueue[parts[1]] = parts[2]
+                        send_request(sock, "direct_retrieve_file", {"file_name": parts[1]})
+                    case "/reject_file":
+                        send_request(sock, "direct_reject_file", {"file_name": parts[1]})
+                    case "/send_group_file":
+                        file_data = openFileToString(parts[3])
+                        send_request(sock, "group_send_file", {"group": parts[1], "file_name": parts[2], "data": file_data})
+                    case "/retrieve_group_file":
+                        with lock:
+                            retriveFileQueue[parts[2]] = parts[3]
+                        send_request(sock, "group_retrieve_file", {"group": parts[1], "file_name": parts[2]})
+                    case "/remove_group_file":
+                        send_request(sock, "group_remove_file", {"group": parts[1], "file_name": parts[2]})
+                    case _:
+                        print(f"Unknown command: {command}")
+            except:
+                print(f"Command {command} arguments miss match")
 
         except (KeyboardInterrupt, EOFError):
             break
