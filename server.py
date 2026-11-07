@@ -1,11 +1,20 @@
 import socket
 import threading
 import json
+from google import genai
+import os
+from dotenv import load_dotenv
+import base64
 
-HOST = '0.0.0.0'
-PORT = 9999
+load_dotenv()
+
+HOST = os.getenv('HOST')
+PORT = int(os.getenv('PORT'))
 
 lock = threading.Lock()
+
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 connections = {}
 users = {} # username -> {conn, addr, groups, files}
@@ -233,6 +242,51 @@ def groupRemoveFile(conn, group_name, file_name):
                         groups.get(group_name).get("files").pop(file_name)
                         send_response(conn, "451", f"File {file_name} has been remove from list")
 
+def askGemini(conn, prompt):
+    if(authentication(conn)):
+        try:
+            interaction = client.interactions.create(
+                model="gemini-3.5-flash-lite",
+                input=prompt
+            )
+            # print(prompt)
+            send_response(conn, "501", interaction.output_text)
+        except Exception as e:
+            print(e)
+            send_response(conn, "500", "Generate failed")
+
+def generateImage(conn, file_name, prompt):
+    if(authentication(conn)):
+        try:
+            interaction = client.interactions.create(
+                model="gemini-3.1-flash-lite-image",
+                input=prompt,
+            )
+            # print(prompt)
+            send_response(conn, "511", {"file_name": file_name, "data": interaction.output_image.data})
+        except Exception as e:
+            print(e)
+            send_response(conn, "510", "Generate failed")
+
+def pdfSumarize(conn, data):
+    if(authentication(conn)):
+        try:
+            interaction = client.interactions.create(
+                model="gemini-3.5-flash-lite",
+                input=[
+                    {
+                        "type": "document",
+                        "data": base64.b64encode(bytes.fromhex(data)).decode('utf-8'),
+                        "mime_type": "application/pdf"
+                    },
+                    {"type": "text", "text": "Summarize this document"}
+                ]
+            )
+            send_response(conn, "521", interaction.output_text)
+        except Exception as e:
+            print(e)
+            send_response(conn, "520", "Sumarize failed")
+
 def handle_client(conn, addr):
     buffer = ""
     print(f"[NEW CONNECTION] Connected from {addr}")
@@ -290,6 +344,12 @@ def handle_client(conn, addr):
                         groupRetrieveFile(conn, body.get("group"), body.get("file_name"))
                     case "group_remove_file":
                         groupRemoveFile(conn, body.get("group"), body.get("file_name"))
+                    case "ask_gemini":
+                        askGemini(conn, body.get("prompt"))
+                    case "generate_image":
+                        generateImage(conn, body.get("file_name"), body.get("prompt"))
+                    case "pdf_sumarize":
+                        pdfSumarize(conn, body.get("data"))
 
     except Exception as e:
         print(f"[ERROR] {addr}: {e}")

@@ -1,6 +1,7 @@
 import socket
 import threading
 import json
+import base64
 
 HOST = "localhost"
 PORT = 9999
@@ -36,6 +37,10 @@ def openFileToString(path):
 def stringToFile(data, path):
     with open(path, "wb") as file:
         file.write(bytes.fromhex(data))
+
+def base64StringToFile(data, path):
+    with open(path, "wb") as file:
+        file.write(base64.b64decode(data))
 
 def receive_messages_handler(sock):
     global is_logged_in, is_connected
@@ -127,7 +132,11 @@ def receive_messages_handler(sock):
                         print(f"\n[Server]: {data.get("msg")}\n> ", end="", flush=True)   
                     case "411":
                         data = res.get('data', {})
-                        stringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))             
+                        with lock:
+                            if(data.get("file_name") in retriveFileQueue.keys()):
+                                stringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))   
+                                retriveFileQueue.pop(data.get("file_name")) 
+                                print(f"\n[Client]: Saved {data.get("file_name")}\n> ", end="", flush=True)         
                     # case "420":
                     #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
                     # case "421":
@@ -145,13 +154,38 @@ def receive_messages_handler(sock):
                         print(f"\n[Server]: {data.get("msg")}\n> ", end="", flush=True)   
                     case "441":
                         data = res.get('data', {})
-                        stringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))             
+                        with lock:
+                            if(data.get("file_name") in retriveFileQueue.keys()):
+                                stringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))     
+                                retriveFileQueue.pop(data.get("file_name"))
+                                print(f"\n[Client]: Saved {data.get("file_name")}\n> ", end="", flush=True)
                     # case "450":
                     #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
                     # case "451":
                     #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)  
+                    # case "500":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)  
+                    case "501":
+                        print(f"\n[Gemini]: {res.get('data', '')}\n> ", end="", flush=True)
+                    case "510":
+                        with lock:
+                            if(data.get("file_name") in retriveFileQueue.keys()):
+                                retriveFileQueue.pop(data.get("file_name"))
+                        print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)  
+                    case "511":
+                        data = res.get('data', {})
+                        with lock:
+                            if(data.get("file_name") in retriveFileQueue.keys()):
+                                base64StringToFile(data.get("data"), retriveFileQueue.get(data.get("file_name")))
+                                retriveFileQueue.pop(data.get("file_name"))
+                                print(f"\n[Client]: Saved {data.get("file_name")}\n> ", end="", flush=True)
+                    # case "520":
+                    #     print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)  
+                    case "521":
+                        print(f"\n[Gemini summarize]: {res.get('data', '')}\n> ", end="", flush=True)
                     case _:
                         print(f"\n[Server]: {res.get('data', '')}\n> ", end="", flush=True)
+
         except Exception:
             is_connected = False
             login_response_event.set()
@@ -239,6 +273,15 @@ def main():
                         send_request(sock, "group_retrieve_file", {"group": parts[1], "file_name": parts[2]})
                     case "/remove_group_file":
                         send_request(sock, "group_remove_file", {"group": parts[1], "file_name": parts[2]})
+                    case "/ask_gemini":
+                        send_request(sock, "ask_gemini", {"prompt": " ".join(parts[1:])})
+                    case "/generate_image": # file_name path prompt
+                        with lock:
+                            retriveFileQueue[parts[1]] = parts[2]
+                        send_request(sock, "generate_image", {"file_name": parts[1], "prompt": " ".join(parts[3:])})
+                    case "/pdf_sumarize":
+                        file_data = openFileToString(parts[1])
+                        send_request(sock, "pdf_sumarize", {"data": file_data})
                     case _:
                         print(f"Unknown command: {command}")
             except:
