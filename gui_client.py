@@ -338,6 +338,9 @@ class NetworkSocketGUI:
         btn_logout = ttk.Button(top_bar, text="Disconnect / Logout", width=18, command=self.on_logout)
         btn_logout.pack(side=tk.RIGHT, padx=6)
 
+        btn_files = ttk.Button(top_bar, text="📁 File Manager", width=16, command=self.open_file_manager)
+        btn_files.pack(side=tk.RIGHT, padx=6)
+
         btn_refresh = ttk.Button(top_bar, text="🔄 Refresh All", width=14, command=self.refresh_all)
         btn_refresh.pack(side=tk.RIGHT, padx=6)
 
@@ -591,6 +594,144 @@ class NetworkSocketGUI:
             messagebox.showerror("Error", f"Failed to read PDF: {e}")
 
     # ==========================================
+    # FILE MANAGER (INBOX & GROUP FILES)
+    # ==========================================
+    def open_file_manager(self):
+        """
+        File Manager Dialog:
+        - View and download pending direct files (inbox)
+        - View and download group files
+        - Reject direct files or remove group files
+        """
+        win = tk.Toplevel(self.root)
+        win.title("📁 File Manager - NetworkSocket")
+        win.geometry("560x440")
+        win.transient(self.root)
+
+        notebook = ttk.Notebook(win, padding=6)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Tab 1: Direct Files (Pending Inbox)
+        tab_direct = ttk.Frame(notebook, padding=8)
+        notebook.add(tab_direct, text="📥 Direct Files (Inbox)")
+
+        ttk.Label(tab_direct, text="Files sent directly to you (pending on server):", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(0, 4))
+        
+        list_frame1 = ttk.Frame(tab_direct)
+        list_frame1.pack(fill=tk.BOTH, expand=True)
+
+        scroll1 = ttk.Scrollbar(list_frame1)
+        scroll1.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.direct_files_listbox = tk.Listbox(list_frame1, yscrollcommand=scroll1.set, font=("Segoe UI", 9))
+        self.direct_files_listbox.pack(fill=tk.BOTH, expand=True)
+        scroll1.config(command=self.direct_files_listbox.yview)
+
+        btn_row1 = ttk.Frame(tab_direct, padding=(0, 6))
+        btn_row1.pack(fill=tk.X)
+
+        btn_download = ttk.Button(btn_row1, text="⬇ Retrieve / Download", command=self._download_selected_direct_file)
+        btn_download.pack(side=tk.LEFT, padx=3)
+
+        btn_reject = ttk.Button(btn_row1, text="❌ Reject File", command=self._reject_selected_direct_file)
+        btn_reject.pack(side=tk.LEFT, padx=3)
+
+        btn_refresh_direct = ttk.Button(btn_row1, text="🔄 Refresh", command=lambda: self.send_request("list_direct_files", None))
+        btn_refresh_direct.pack(side=tk.RIGHT, padx=3)
+
+        # Tab 2: Group Files
+        tab_group = ttk.Frame(notebook, padding=8)
+        notebook.add(tab_group, text="👥 Group Files")
+
+        grp_select_frame = ttk.Frame(tab_group)
+        grp_select_frame.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(grp_select_frame, text="Select Group:").pack(side=tk.LEFT, padx=(0, 4))
+        
+        self.grp_files_combo = ttk.Combobox(grp_select_frame, state="readonly")
+        self.grp_files_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        self.grp_files_combo.bind("<<ComboboxSelected>>", self._on_group_combo_select)
+
+        btn_load_grp = ttk.Button(grp_select_frame, text="Load Files", command=self._load_selected_group_files)
+        btn_load_grp.pack(side=tk.RIGHT, padx=2)
+
+        list_frame2 = ttk.Frame(tab_group)
+        list_frame2.pack(fill=tk.BOTH, expand=True, pady=4)
+
+        scroll2 = ttk.Scrollbar(list_frame2)
+        scroll2.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.group_files_listbox = tk.Listbox(list_frame2, yscrollcommand=scroll2.set, font=("Segoe UI", 9))
+        self.group_files_listbox.pack(fill=tk.BOTH, expand=True)
+        scroll2.config(command=self.group_files_listbox.yview)
+
+        btn_row2 = ttk.Frame(tab_group, padding=(0, 6))
+        btn_row2.pack(fill=tk.X)
+
+        btn_dl_grp = ttk.Button(btn_row2, text="⬇ Retrieve / Download", command=self._download_selected_group_file)
+        btn_dl_grp.pack(side=tk.LEFT, padx=3)
+
+        btn_rm_grp = ttk.Button(btn_row2, text="❌ Delete Group File", command=self._remove_selected_group_file)
+        btn_rm_grp.pack(side=tk.LEFT, padx=3)
+
+        # Trigger initial fetches
+        self.send_request("list_direct_files", None)
+        self.send_request("list_groups", None)
+
+    def _download_selected_direct_file(self):
+        sel = self.direct_files_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Select File", "Please select a file to download.")
+            return
+        file_name = self.direct_files_listbox.get(sel[0])
+        save_path = filedialog.asksaveasfilename(initialfile=file_name, title="Save File As")
+        if save_path:
+            self.retrive_file_queue[file_name] = save_path
+            self.send_request("direct_retrieve_file", {"file_name": file_name})
+
+    def _reject_selected_direct_file(self):
+        sel = self.direct_files_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Select File", "Please select a file to reject.")
+            return
+        file_name = self.direct_files_listbox.get(sel[0])
+        if messagebox.askyesno("Confirm Reject", f"Are you sure you want to reject and delete '{file_name}' from the server?"):
+            self.send_request("direct_reject_file", {"file_name": file_name})
+
+    def _on_group_combo_select(self, event=None):
+        self._load_selected_group_files()
+
+    def _load_selected_group_files(self):
+        grp = self.grp_files_combo.get().strip()
+        if grp:
+            self.send_request("list_group_files", {"group": grp})
+
+    def _download_selected_group_file(self):
+        sel = self.group_files_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Select File", "Please select a group file to download.")
+            return
+        file_name = self.group_files_listbox.get(sel[0])
+        grp = self.grp_files_combo.get().strip()
+        if not grp:
+            return
+        save_path = filedialog.asksaveasfilename(initialfile=file_name, title="Save Group File As")
+        if save_path:
+            self.retrive_file_queue[file_name] = save_path
+            self.send_request("group_retrieve_file", {"group": grp, "file_name": file_name})
+
+    def _remove_selected_group_file(self):
+        sel = self.group_files_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Select File", "Please select a group file to delete.")
+            return
+        file_name = self.group_files_listbox.get(sel[0])
+        grp = self.grp_files_combo.get().strip()
+        if not grp:
+            return
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to remove '{file_name}' from group '{grp}'?"):
+            self.send_request("group_remove_file", {"group": grp, "file_name": file_name})
+
+    # ==========================================
     # NETWORK SOCKET & DISPATCH
     # ==========================================
     def send_request(self, action, data):
@@ -673,13 +814,36 @@ class NetworkSocketGUI:
             case "111":  # Groups list (R9)
                 self.groups_listbox.delete(0, tk.END)
                 raw_groups = data or []
+                group_names = []
                 for item in raw_groups:
                     if isinstance(item, dict):
                         g_name = item.get("group")
                         members = ", ".join(item.get("members", []))
                         self.groups_listbox.insert(tk.END, f"{g_name} (Members: {members})")
+                        group_names.append(g_name)
                     else:
                         self.groups_listbox.insert(tk.END, str(item))
+                        group_names.append(str(item).split(" ")[0])
+                if hasattr(self, 'grp_files_combo') and self.grp_files_combo.winfo_exists():
+                    self.grp_files_combo['values'] = group_names
+                    if group_names and not self.grp_files_combo.get():
+                        self.grp_files_combo.set(group_names[0])
+
+            case "121":  # Pending direct files list
+                raw_files = data or []
+                if hasattr(self, 'direct_files_listbox') and self.direct_files_listbox.winfo_exists():
+                    self.direct_files_listbox.delete(0, tk.END)
+                    for f in raw_files:
+                        self.direct_files_listbox.insert(tk.END, str(f))
+                self.log_lobby(f"Pending files in your inbox: {', '.join(raw_files) if raw_files else 'None'}", tag="info")
+
+            case "131":  # Group files list
+                raw_files = data or []
+                if hasattr(self, 'group_files_listbox') and self.group_files_listbox.winfo_exists():
+                    self.group_files_listbox.delete(0, tk.END)
+                    for f in raw_files:
+                        self.group_files_listbox.insert(tk.END, str(f))
+                self.log_lobby(f"Group files available: {', '.join(raw_files) if raw_files else 'None'}", tag="info")
 
             case "200":  # Direct message error
                 self.log_lobby(f"Private message error: {data}", tag="warn")
@@ -726,15 +890,43 @@ class NetworkSocketGUI:
             case "401":  # Incoming direct file notification
                 sender = data.get("from")
                 file_name = data.get("file_name")
-                self.log_lobby(f"📁 {sender} sent file '{file_name}'. Use Retrieve to save it.", tag="info")
+                self.log_lobby(f"📁 {sender} sent file '{file_name}'.", tag="info")
                 if f"private:{sender}" in self.chat_rooms:
                     self.chat_rooms[f"private:{sender}"].append_file_notice(sender, file_name, is_you=False)
-                # Ask user if they wish to download
-                if messagebox.askyesno("File Received", f"User {sender} sent file '{file_name}'. Do you want to download it now?"):
-                    save_path = filedialog.asksaveasfilename(initialfile=file_name)
+
+                # Ask user if they wish to download now
+                ans = messagebox.askyesno(
+                    "File Received",
+                    f"User '{sender}' sent you a file:\n\n📄 {file_name}\n\nDo you want to download and save it now?"
+                )
+                if ans:
+                    save_path = filedialog.asksaveasfilename(initialfile=file_name, title="Save File As")
                     if save_path:
                         self.retrive_file_queue[file_name] = save_path
                         self.send_request("direct_retrieve_file", {"file_name": file_name})
+                else:
+                    # In case user clicks "No": offer option to Reject now or keep in inbox
+                    reject_ans = messagebox.askyesno(
+                        "Reject File?",
+                        f"You chose not to download '{file_name}' right now.\n\n"
+                        f"Do you want to REJECT and delete this file from the server?\n\n"
+                        f"• Click [Yes] to Reject & delete from server now.\n"
+                        f"• Click [No] to Keep it in your pending inbox (you can retrieve it anytime via '📁 File Manager')."
+                    )
+                    if reject_ans:
+                        self.send_request("direct_reject_file", {"file_name": file_name})
+                        self.log_lobby(f"❌ Rejected file '{file_name}' from {sender}.", tag="warn")
+                    else:
+                        self.log_lobby(f"📁 File '{file_name}' kept in your pending inbox. Open 'File Manager' anytime to retrieve it.", tag="info")
+
+            case "421":  # Direct file removed / rejected confirmation
+                self.log_lobby(f"[Server]: {data}", tag="info")
+                if hasattr(self, 'direct_files_listbox') and self.direct_files_listbox.winfo_exists():
+                    self.send_request("list_direct_files", None)
+
+            case "451":  # Group file removed confirmation
+                self.log_lobby(f"[Server]: {data}", tag="info")
+                self._load_selected_group_files()
 
             case "411" | "441":  # File downloaded content
                 file_name = data.get("file_name")
