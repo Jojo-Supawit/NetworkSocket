@@ -13,7 +13,7 @@ PORT = int(os.getenv('PORT'))
 
 lock = threading.Lock()
 
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
 connections = {}
@@ -63,6 +63,7 @@ def directMessage(conn, target_name, msg):
             else:
                 uname = connections.get(conn)
                 send_response(users.get(target_name).get("conn"), "201", {"from": uname, "addr": users.get(uname).get("addr"), "msg": msg})
+                send_response(conn, "202", {"target": target_name, "from": uname, "msg": msg})
 
 def createGroup(conn, group_name):
     if(authentication(conn)):
@@ -78,9 +79,9 @@ def createGroup(conn, group_name):
 
 def listingGroups(conn):
     if(authentication(conn)):
-            with lock:
-                grouplist = [group for group in groups.keys()]
-                send_response(conn, "111", grouplist)
+        with lock:
+            grouplist = [{"group": group, "members": list(groups.get(group).get("members"))} for group in groups.keys()]
+            send_response(conn, "111", grouplist)
 
 def joinGroup(conn, group_name):
     if(authentication(conn)):
@@ -123,6 +124,7 @@ def groupMessage(conn, group_name, msg):
                     for target_name in groups.get(group_name).get("members"):
                         if(target_name != uname):
                             send_response(users.get(target_name).get("conn"), "331", {"group": group_name, "from": uname, "addr": users.get(uname).get("addr"), "msg": msg})
+                    send_response(conn, "332", {"group": group_name, "msg": msg})
 
 def removeGroup(conn, group_name):
     if(authentication(conn)):

@@ -2,6 +2,12 @@ import socket
 import threading
 import json
 import base64
+import sys
+
+if "--gui" in sys.argv:
+    from gui_client import main as gui_main
+    gui_main()
+    sys.exit(0)
 
 HOST = "localhost"
 PORT = 9999
@@ -80,7 +86,14 @@ def receive_messages_handler(sock):
                         print(f"\n[Server]: {', '.join(users)}\n> ", end="", flush=True)
                     case "111":
                         raw_list = res.get("data", [])
-                        print(f"\n[Server]: {', '.join(raw_list)}\n> ", end="", flush=True)
+                        formatted = []
+                        for item in raw_list:
+                            if isinstance(item, dict):
+                                members_str = ", ".join(item.get("members", []))
+                                formatted.append(f"{item.get('group')} (members: {members_str})")
+                            else:
+                                formatted.append(str(item))
+                        print(f"\n[Server]: {', '.join(formatted)}\n> ", end="", flush=True)
                     case "121":
                         raw_list = res.get("data", [])
                         print(f"\n[Server]: {', '.join(raw_list)}\n> ", end="", flush=True)
@@ -192,8 +205,10 @@ def receive_messages_handler(sock):
             break
 
 def main():
-    HOST = input("HOST=")
-    PORT = int(input("PORT="))
+    raw_host = input("HOST (default localhost) = ").strip()
+    HOST = raw_host if raw_host else "localhost"
+    raw_port = input("PORT (default 9999) = ").strip()
+    PORT = int(raw_port) if raw_port else 9999
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.connect((HOST, PORT))
@@ -213,20 +228,56 @@ def main():
         send_request(sock, "login", {"username": username})
         login_response_event.wait()
 
+    current_room = {"type": None, "name": None}
+
     while is_connected:
         try:
-            cmd_input = input("> ").strip()
+            prompt_str = "> "
+            if current_room["type"] == "private":
+                prompt_str = f"[Room 💬 {current_room['name']}] > "
+            elif current_room["type"] == "group":
+                prompt_str = f"[Room 👥 {current_room['name']}] > "
+
+            cmd_input = input(prompt_str).strip()
             if not cmd_input:
                 continue
             if cmd_input.lower() == "/quit":
                 send_request(sock, "logout", None)
                 break
 
+            # If not starting with '/', send directly to active room
+            if not cmd_input.startswith("/"):
+                if current_room["type"] == "private":
+                    send_request(sock, "direct_message", {"target_name": current_room["name"], "msg": cmd_input})
+                    print(f"[You -> {current_room['name']}]: {cmd_input}")
+                elif current_room["type"] == "group":
+                    send_request(sock, "group_message", {"group": current_room["name"], "msg": cmd_input})
+                    print(f"[(Group: {current_room['name']}): You]: {cmd_input}")
+                else:
+                    print("Not in any room. Use /chat <username> or /group <group_name> to enter a room, or type a command starting with '/'.")
+                continue
+
             parts = cmd_input.split(" ")
             command = parts[0]
 
             try:
                 match command:
+                    case "/chat":
+                        current_room = {"type": "private", "name": parts[1]}
+                        print(f"--- Entered Private Chat Room with {parts[1]} (R5, R6) ---")
+                        print("Type messages directly to send. Type /leave to exit back to lobby.")
+                    case "/group":
+                        current_room = {"type": "group", "name": parts[1]}
+                        print(f"--- Entered Group Chat Room: {parts[1]} (R5, R6) ---")
+                        print("Type messages directly to send. Type /leave to exit back to lobby.")
+                    case "/leave":
+                        if current_room["type"] is not None:
+                            print(f"--- Left {current_room['name']} room back to main lobby ---")
+                            current_room = {"type": None, "name": None}
+                        elif len(parts) > 1:
+                            send_request(sock, "leave_group", {"group": parts[1]})
+                        else:
+                            print("Not in a room. To leave a group from server: /leave <group_name>")
                     case "/list_users":
                         send_request(sock, "list_users", None)
                     case "/list_groups":
@@ -246,8 +297,6 @@ def main():
                     case "/join":
                         send_request(sock, "join_group", {"group": parts[1]})
                     case "/leave_group":
-                        send_request(sock, "leave_group", {"group": parts[1]})
-                    case "/leave":
                         send_request(sock, "leave_group", {"group": parts[1]})
                     case "/group_message":
                         send_request(sock, "group_message", {"group": parts[1], "msg": parts[2]})

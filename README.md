@@ -44,25 +44,33 @@ After login the terminal prompt changes to `> `. From there you type **client‑
 
 ---
 
-## Connecting from your terminal
+## Clients
 
-There is no separate client executable — the same process (`server.py`) runs both as a server. You interact via standard input, which sends JSON lines to `localhost:9999`:
-
+### 1. Graphical User Interface (GUI) Client — Fulfills R5 & R6
+Run the GUI client:
 ```bash
-# In one terminal:
-python3 server.py          # or python server.py
+python gui_client.py
+# or
+python client.py --gui
 ```
+Features:
+- **R5 (Chat Rooms)**: Every private chat and group chat opens in its own dedicated room tab or floating pop-out window.
+- **R6 (Chat Box & Chat Window)**: Every room includes:
+  - **Chat Window**: A scrollable log showing formatted sent messages, incoming messages, and file notices.
+  - **Chat Box**: An input entry box with a Send button (and Enter key shortcut) for sending messages directly to that room.
+- **R4 (Online Users)**: Real-time list of online users with one-click direct message room launcher.
+- **R8–R11 (Groups)**: Create group (R8), see groups with member lists (R9), join groups (R10), and chat inside group rooms (R11).
+- **AI Tools**: One-click Ask Gemini, Image Generation, and PDF Summarization.
 
-When asked for username it prints:
-
+### 2. Command Line Interface (CLI) Client
+Run the CLI client:
+```bash
+python client.py
 ```
-[NEW CONNECTION] Connected from 0.0.0.0:xxxx
-Enter your username: <alice>
-Logging in successfully
-> 
-```
-
-Then every command is a line starting with `/` and arguments after the slash are passed as JSON payloads.
+Room navigation in CLI:
+- `/chat <username>` — Enters a private chat room with `<username>`. The prompt updates to `[Room 💬 <username>] > `. Typing any message automatically sends it to this private room.
+- `/group <group_name>` — Enters a group chat room. The prompt updates to `[Room 👥 <group_name>] > `. Typing any message automatically sends it to the group.
+- `/leave` — Leaves the current room back to the main lobby `> `.
 
 ### Raw client → server request shape
 

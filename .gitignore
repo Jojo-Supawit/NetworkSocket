@@ -2,3 +2,5 @@
 *.png
 test.*
 .env
+__pycache__/
+*.pyc
